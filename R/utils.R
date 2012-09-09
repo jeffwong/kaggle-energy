@@ -18,6 +18,7 @@ transform.fastVAR = function(rawLoadData, rawTempData) {
         as.vector(t(station[,-(1:4)]))
     }))
     return (list(load = as.matrix(load), temp = as.matrix(temp)))
+  }
 
 random.weeks = function(start, end, k){
   # Randomly draw k Monday -> Sunday weeks between start and end.
