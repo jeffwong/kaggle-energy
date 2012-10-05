@@ -1,3 +1,5 @@
+#This file strips quotes and commas from each row
+
 import csv
 import re
 

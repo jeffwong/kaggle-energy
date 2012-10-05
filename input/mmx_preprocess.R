@@ -1,6 +1,7 @@
 require(reshape2)
 require(timeDate)
 require(lubridate)
+require(plyr)
 
 getSeason <- function(DATES) {
     WS <- as.Date("2012-12-15", format = "%Y-%m-%d") # Winter Solstice
@@ -37,8 +38,8 @@ energy$weekend[energy.weekends] = T
 
 #Identify Business Days
 
-energy$business_day = F
-energy$business_day[which(isHoliday(energy.dates, holidays, 1:5))] = T
+energy$business_day = T
+energy$business_day[which(isHoliday(energy.dates, holidays, 1:5))] = F
 
 #Identify Season
 
@@ -48,12 +49,16 @@ energy$season = getSeason(energy.dates)
 
 energy$day_of_week = wday(energy.dates, label=T)
 
-#Melt
+#Format into multivariate time series
 
-energy.melt = melt(energy, id.vars=c(1:4, 29:33))
-energy.melt$variable = as.numeric(energy.melt$variable)
-names(energy.melt)[10] = "hour"
-names(energy.melt)[11] = "measurement"
+energy.zones = lapply(split(energy, energy$zone_id), function(zone) {
+  energy.melt = melt(zone[,-1], id.vars=c(1:3, 28:32))
+  energy.melt$variable = as.numeric(energy.melt$variable)
+  names(energy.melt)[9] = "hour"
+  names(energy.melt)[10] = paste("load", zone[1,1], sep="")
+  return (energy.melt)
+})
+energy.mts = Reduce(function(...) merge(...,all=T), energy.zones)
 
 #Process temp dataset
 
@@ -70,50 +75,56 @@ temp.weekends = which(isHoliday(temp.dates, c(), 1:5))
 temp$weekend = F
 temp$weekend[temp.weekends] = T
 
-temp$business_day = F
-temp$business_day[which(isHoliday(temp.dates, holidays, 1:5))] = T
+temp$business_day = T
+temp$business_day[which(isHoliday(temp.dates, holidays, 1:5))] = F
 
 temp$season = getSeason(temp.dates)
 
 temp$day_of_week = wday(temp.dates, label=T)
 
-temp.melt = melt(temp, id.vars=c(1:4, 29:33))
-temp.melt$variable = as.numeric(temp.melt$variable)
-names(temp.melt)[10] = "hour"
-names(temp.melt)[11] = "measurement"
-
-temp.melt$measurement_type = "temperature"
-energy.melt$measurement_type = "load"
+temp.zones = lapply(split(temp, temp$station_id), function(zone) {
+  temp.melt = melt(zone[,-1], id.vars=c(1:3, 28:32))
+  temp.melt$variable = as.numeric(temp.melt$variable)
+  names(temp.melt)[9] = "hour"
+  names(temp.melt)[10] = paste("temp", zone[1,1], sep="")
+  return (temp.melt)
+})
+temp.mts = Reduce(function(...) merge(...,all=T), temp.zones)
 
 #Generate timestamps
 
-energy.timestamp = apply(energy.melt, 1, function(i) {
-   year = i[2]
-   month = if(as.numeric(i[3]) >= 10) i[3] else paste("0", as.numeric(i[3]), sep="")
-   day = if(as.numeric(i[4]) >= 10) i[4] else paste("0", as.numeric(i[4]), sep="")
-   hour = if((as.numeric(i[10])-1) >= 10) (as.numeric(i[10])-1) else paste("0", (as.numeric(i[10])-1), sep="")
+energy.timestamp = apply(energy.mts, 1, function(i) {
+   year = i[1]
+   month = if(as.numeric(i[2]) >= 10) i[2] else paste("0", as.numeric(i[2]), sep="")
+   day = if(as.numeric(i[3]) >= 10) i[3] else paste("0", as.numeric(i[3]), sep="")
+   hour = if((as.numeric(i[9])-1) >= 10) (as.numeric(i[9])-1) else paste("0", (as.numeric(i[9])-1), sep="")
 
    paste(paste(year, month, day, sep='-'), paste(hour, "00", "00", sep=":"), sep="T") 
 })
-energy.melt$timestamp = energy.timestamp
+energy.mts$timestamp = energy.timestamp
 
-temp.timestamp = apply(temp.melt, 1, function(i) {
-   year = i[2]
-   month = if(as.numeric(i[3]) >= 10) i[3] else paste("0", as.numeric(i[3]), sep="")
-   day = if(as.numeric(i[4]) >= 10) i[4] else paste("0", as.numeric(i[4]), sep="")
-   hour = if((as.numeric(i[10])-1) >= 10) (as.numeric(i[10])-1) else paste("0", (as.numeric(i[10])-1), sep="")
+temp.timestamp = apply(temp.mts, 1, function(i) {
+   year = i[1]
+   month = if(as.numeric(i[2]) >= 10) i[2] else paste("0", as.numeric(i[2]), sep="")
+   day = if(as.numeric(i[3]) >= 10) i[3] else paste("0", as.numeric(i[3]), sep="")
+   hour = if((as.numeric(i[9])-1) >= 10) (as.numeric(i[9])-1) else paste("0", (as.numeric(i[9])-1), sep="")
 
    paste(paste(year, month, day, sep='-'), paste(hour, "00", "00", sep=":"), sep="T") 
 })
-temp.melt$timestamp = temp.timestamp
+temp.mts$timestamp = temp.timestamp
 
-names(temp.melt)[1] = "id"
-names(energy.melt)[1] = "id"
-energy.melt$id = paste("L", energy.melt$id, sep="")
-temp.melt$id = paste("T", temp.melt$id, sep="")
+energy.mts[,10:29] = apply(energy.mts[,10:29], 2, function(j) {
+    na.indices = which(is.na(j))
+    j[na.indices] = -1
+    j
+})
+temp.mts[,10:20] = apply(temp.mts[,10:20], 2, function(j) {
+    na.indices = which(is.na(j))
+    j[na.indices] = -1
+    j
+})
 
-energy.melt = energy.melt[-which(is.na(energy.melt$measurement)),]
-temp.melt = temp.melt[-which(is.na(temp.melt$measurement)),]
+energytemp = merge(energy.mts, temp.mts, all=T)
 
 
-write.csv(rbind(energy.melt, temp.melt), file="Load_history_mmx.csv", row.names = F, quote=F)
+write.csv(energytemp, file="Load_history_mmx.csv", row.names = F, quote=F)
