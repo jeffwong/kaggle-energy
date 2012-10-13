@@ -1,13 +1,7 @@
-require(devtools)
 require(forecast)
 require(reshape2)
 require(ggplot2)
 source("../utils.R")
-
-install_github("fastVAR", "jeffwong")
-install_github("imputation", "jeffwong")
-require(fastVAR)
-require(imputation)
 
 ########################
 #Impute using means
@@ -89,16 +83,10 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 rawTempData = read.csv('../../input/temperature_history.csv', header=T,
                        colClasses = rep("numeric", 28))
 input = transform.fastVAR(rawLoadData, rawTempData)
-test = input$load[startIndex:endIndex,]
-test = melt(test, id.vars=colnames(test))
-ggplot(data=test, aes(x=Var1, y=value, group=Var2, color=Var2)) + geom_line()
-
 
 #Vary algorithm here
 startIndex = nrow(input$load) - 24*7 + 1
 endIndex = nrow(input$load)
-
-plot(input$load[startIndex:endIndex,1], type='l', col='blue')
 
 prediction = apply(input$load[startIndex:endIndex,], 2, function(j) {
     predict(auto.arima(ts(j)), 24*7)

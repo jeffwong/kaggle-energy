@@ -1,13 +1,7 @@
-require(devtools)
 require(forecast)
 require(reshape2)
 require(ggplot2)
 source("../utils.R")
-
-install_github("fastVAR", "jeffwong")
-install_github("imputation", "jeffwong")
-require(fastVAR)
-require(imputation)
 
 ########################
 #Impute using means
@@ -83,7 +77,7 @@ missing8 = do.call(rbind, lapply(22:28, function(day) {
 imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, missing7, missing8)
 
 #######################
-#Predict using forecast
+#Predict using persistence
 #######################
 
 rawTempData = read.csv('../../input/temperature_history.csv', header=T,
