@@ -89,24 +89,25 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 rawTempData = read.csv('../../input/temperature_history.csv', header=T,
                        colClasses = rep("numeric", 28))
 input = transform.fastVAR(rawLoadData, rawTempData)
+
+startIndex = nrow(input$load) - 24*7 + 1
+endIndex = nrow(input$load)
+
 test = input$load[startIndex:endIndex,]
 test = melt(test, id.vars=colnames(test))
 ggplot(data=test, aes(x=Var1, y=value, group=Var2, color=Var2)) + geom_line()
 
 
 #Vary algorithm here
-startIndex = nrow(input$load) - 24*7 + 1
-endIndex = nrow(input$load)
-
-plot(input$load[startIndex:endIndex,1], type='l', col='blue')
-
 prediction = apply(input$load[startIndex:endIndex,], 2, function(j) {
-    predict(auto.arima(ts(j)), 24*7)
+    pred = j
+    pred[151:168] = pred[(151-24) : (168-24)]
+    pred
 })
-prediction.output = data.frame(cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction, function(i) {
-    pred = matrix(i[[1]], ncol=24)
-    cbind(year=2008, month = 7, day=1:7, pred)
-}))))
+prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, apply(prediction, 2, function(j) {
+    pred = matrix(j, ncol=24)
+    data.frame(cbind(year=2008, month = 7, day=1:7, pred))
+})))
 #End Vary
 
 prediction.agg = ddply(prediction.output, "day", function(d) {
@@ -119,4 +120,4 @@ colnames(prediction.output)[5:28] = paste("h", 1:24, sep="")
 
 final = rbind(imputed, prediction.output)
 final = cbind(id=1:nrow(final), final)
-write.csv(final, "../../submissions/submission1.csv", row.names=F, quote=F)
+write.csv(final, "../../submissions/submission2.csv", row.names=F, quote=F)
