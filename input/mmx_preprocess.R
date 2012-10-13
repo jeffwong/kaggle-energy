@@ -17,7 +17,7 @@ getSeason <- function(DATES) {
         ifelse (d >= SS & d < FE, "Summer", "Fall")))
 }
 
-energy = read.csv("Load_history_training.csv", header=T)
+energy = read.csv("Load_history_clean.csv", header=T)
 energy.dates = apply(energy, 1, function(i) {
     paste(i[2:4], collapse='-')
 })
@@ -113,6 +113,8 @@ temp.timestamp = apply(temp.mts, 1, function(i) {
 })
 temp.mts$timestamp = temp.timestamp
 
+#Handle missing data
+
 energy.mts[,10:29] = apply(energy.mts[,10:29], 2, function(j) {
     na.indices = which(is.na(j))
     j[na.indices] = -1
@@ -127,4 +129,4 @@ temp.mts[,10:20] = apply(temp.mts[,10:20], 2, function(j) {
 energytemp = merge(energy.mts, temp.mts, all=T)
 
 
-write.csv(energytemp, file="Load_history_mmx.csv", row.names = F, quote=F)
+write.csv(energytemp, file="Load_history_augmented.csv", row.names = F, quote=F)

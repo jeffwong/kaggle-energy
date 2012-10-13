@@ -3,12 +3,14 @@ require(reshape2)
 require(ggplot2)
 source("../utils.R")
 
+rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
+                       colClasses = rep("numeric", 28))
+rawTempData = read.csv('../../input/temperature_history.csv', header=T,
+                       colClasses = rep("numeric", 28))
+
 ########################
 #Impute using means
 ########################
-
-rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
-                       colClasses = rep("numeric", 28))
 
 missing1 = do.call(rbind, lapply(6:12, function(day) {
     missing.indices = which(rawLoadData$month == 3 & rawLoadData$day == day)
@@ -80,38 +82,49 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 #Predict using persistence
 #######################
 
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
-input = transform.fastVAR(rawLoadData, rawTempData)
+validation.end = nrow(input$load) - 24
+validation.start = validation.end - 24*7 + 1
+training.end = validation.start - 1
+training.start = training.end - 24*14 + 1
+testing.end = nrow(input$load)
+testing.start = testing.end - 24*7 + 1
 
-startIndex = nrow(input$load) - 24*7 + 1
-endIndex = nrow(input$load)
-
-test = input$load[startIndex:endIndex,]
-test = melt(test, id.vars=colnames(test))
-ggplot(data=test, aes(x=Var1, y=value, group=Var2, color=Var2)) + geom_line()
-
+validation = input$load[validation.start : validation.end,]
+training = input$load[training.start : training.end,]
+testing = input$load[testing.start : testing.end,]
 
 #Vary algorithm here
-prediction = apply(input$load[startIndex:endIndex,], 2, function(j) {
+input = transform.fastVAR(rawLoadData, rawTempData)
+
+prediction.train = data.frame(apply(training, 2, identity))
+
+#Cross Validate
+errors = (validation - prediction.train) / validation
+SSE = apply(errors, 2, function(j) sum(j^2))
+barplot(SSE)
+
+tsIndex = 1
+test = melt(cbind(validation[,tsIndex], prediction.train[,tsIndex]))
+ggplot(test, aes(x = Var1, y = value, group = Var2, color = Var2)) + geom_line()
+
+#Train final model
+prediction.test = data.frame(apply(testing, 2, function(j) {
     pred = j
     pred[151:168] = pred[(151-24) : (168-24)]
     pred
-})
-prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, apply(prediction, 2, function(j) {
+}))
+
+#Prepare submission
+prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, apply(prediction.test, 2, function(j) {
     pred = matrix(j, ncol=24)
     data.frame(cbind(year=2008, month = 7, day=1:7, pred))
 })))
-#End Vary
-
 prediction.agg = ddply(prediction.output, "day", function(d) {
     cbind(zone_id = 21, year=2008, month=7,day=d$day[1], data.frame(as.list(apply(d[,5:28], 2, sum))))
 })
 prediction.output = rbind(prediction.output, prediction.agg)
-
 prediction.output = prediction.output[order(prediction.output$day, prediction.output$zone_id),]
 colnames(prediction.output)[5:28] = paste("h", 1:24, sep="")
-
 final = rbind(imputed, prediction.output)
 final = cbind(id=1:nrow(final), final)
 write.csv(final, "../../submissions/submission2.csv", row.names=F, quote=F)

@@ -3,12 +3,16 @@ require(reshape2)
 require(ggplot2)
 source("../utils.R")
 
-########################
-#Impute using means
-########################
+
 
 rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
                        colClasses = rep("numeric", 28))
+rawTempData = read.csv('../../input/temperature_history.csv', header=T,
+                       colClasses = rep("numeric", 28))
+
+########################
+#Impute using splines and lm
+########################
 
 missing1 = do.call(rbind, lapply(6:12, function(day) {
   missing.indices = which(rawLoadData$month == 3 & rawLoadData$day == day)
@@ -128,58 +132,52 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 #Predict using forecast
 #######################
 
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
-input = transform.fastVAR(rawLoadData, rawTempData)
+validation.end = nrow(input$load) - 24
+validation.start = validation.end - 24*7 + 1
+training.end = validation.start - 1
+training.start = training.end - 24*14 + 1
+testing.end = nrow(input$load)
+testing.start = testing.end - 24*14 + 1
 
-testing.end = nrow(input$load) - 24
-testing.start = testing.end - 24*7 + 1
-training.end = testing.start - 1
-training.start = training.end - 24*28 + 1
-training = input$load[training.start : training.end, ]
+validation = input$load[validation.start : validation.end,]
+training = input$load[training.start : training.end,]
 testing = input$load[testing.start : testing.end,]
 
-predict.end = testing.end
-predict.start = predict.end - 24*28 + 1
-
-
 #Vary algorithm here
+input = transform.fastVAR(rawLoadData, rawTempData)
 
-#Predict
-prediction = matrix(0, nrow = 24*7, ncol=20)
+prediction.train = matrix(0, nrow = 24*7, ncol=20)
 for (i in 1:20) {
   print(i)
   j = training[,i]
-  prediction[,i] = predict(auto.arima(ts(j, frequency=24)), n.ahead = 24*7)$pred
+  prediction.train[,i] = predict(auto.arima(ts(j, frequency=24)), n.ahead = 24*7)$pred
 }
 
 #Cross Validate
-errors = testing - prediction
-test = apply(errors, 2, function(j) {
-  sum(j^2)
-})
+errors = (validation - prediction) / validation
+SSE = apply(errors, 2, function(j) sum(j^2))
+barplot(SSE)
 
-#Create model for test set
-prediction = data.frame(apply(input$load[predict.start:predict.end,], 2, function(j) {
+tsIndex = 1
+test = melt(cbind(validation[,tsIndex], prediction.train[,tsIndex]))
+ggplot(test, aes(x = Var1, y = value, group = Var2, color = Var2)) + geom_line()
+
+#Train final model
+prediction.test = data.frame(apply(testing, 2, function(j) {
   predict(auto.arima(ts(j, frequency=24)), n.ahead=24*7)$pred
 }))
 
-
-                   
-#Format output                   
-prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction, function(i) {
+#Prepare submission
+prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction.test, function(i) {
   pred = matrix(i, ncol=24)
   data.frame(cbind(year=rep(2008,7), month = rep(7,7), day=1:7, pred))
 })))
-
 prediction.agg = ddply(prediction.output, "day", function(d) {
   cbind(zone_id = 21, year=2008, month=7,day=d$day[1], data.frame(as.list(apply(d[,5:28], 2, sum))))
 })
 prediction.output = rbind(prediction.output, prediction.agg)
-
 prediction.output = prediction.output[order(prediction.output$day, prediction.output$zone_id),]
 colnames(prediction.output)[5:28] = paste("h", 1:24, sep="")
-
 final = rbind(imputed, prediction.output)
 final = cbind(id=1:nrow(final), final)
 write.csv(final, "../../submissions/submission3.csv", row.names=F, quote=F)
