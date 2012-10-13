@@ -82,10 +82,12 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 #Predict using persistence
 #######################
 
+input = transform.fastVAR(rawLoadData, rawTempData)
+
 validation.end = nrow(input$load) - 24
 validation.start = validation.end - 24*7 + 1
 training.end = validation.start - 1
-training.start = training.end - 24*14 + 1
+training.start = training.end - 24*7 + 1
 testing.end = nrow(input$load)
 testing.start = testing.end - 24*7 + 1
 
@@ -93,26 +95,46 @@ validation = input$load[validation.start : validation.end,]
 training = input$load[training.start : training.end,]
 testing = input$load[testing.start : testing.end,]
 
-#Vary algorithm here
-input = transform.fastVAR(rawLoadData, rawTempData)
+training.scaled = scale(training)
+validation.scaled = scale(validation, center = attr(training.scaled, "scaled:center"),
+                          scale = attr(training.scaled, "scaled:scale"))
+testing.scaled = scale(testing)
 
-prediction.train = data.frame(apply(training, 2, identity))
+
+
+#Vary algorithm here
+prediction.train = apply(training.scaled, 2, identity)
+colnames(prediction.train) = colnames(validation)
 
 #Cross Validate
-errors = (validation - prediction.train) / validation
-SSE = apply(errors, 2, function(j) sum(j^2))
-barplot(SSE)
+errors = (validation.scaled - prediction.train) / validation.scaled
+RMSE = apply(errors, 2, function(j) sqrt(mean((j^2))))
+barplot(RMSE)
+png(filename="performance/naive2RMSE.png")
+barplot(RMSE)
+dev.off()
 
-tsIndex = 1
-test = melt(cbind(validation[,tsIndex], prediction.train[,tsIndex]))
-ggplot(test, aes(x = Var1, y = value, group = Var2, color = Var2)) + geom_line()
+validation.melt = melt(validation.scaled)
+prediction.train.melt = melt(prediction.train)
+merged = merge(validation.melt, prediction.train.melt, by=c("Var1", "Var2"))
+ggplot(merged, aes(x=Var1)) + geom_line(aes(y=value.x, color='red')) + geom_line(aes(y=value.y, color='green')) + facet_wrap(~Var2, ncol=5)
+ggsave("performance/naive2matrix.png")
 
 #Train final model
-prediction.test = data.frame(apply(testing, 2, function(j) {
+prediction.test = apply(testing.scaled, 2, function(j) {
     pred = j
     pred[151:168] = pred[(151-24) : (168-24)]
     pred
-}))
+})
+
+#Sanity Check
+prediction.test.melt = melt(prediction.test)
+ggplot(prediction.test.melt, aes(x=Var1, group=Var2, y=value, color=Var2)) + geom_line() + facet_wrap(~Var2, ncol=5)
+
+#Rescale
+for (i in 1:ncol(prediction.test)) {
+  prediction.test[,i] = prediction.test[,i] * attr(testing.scaled, "scaled:scale")[i] + attr(testing.scaled, "scaled:center")[i]
+}
 
 #Prepare submission
 prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, apply(prediction.test, 2, function(j) {

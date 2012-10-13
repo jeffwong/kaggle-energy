@@ -1,18 +1,18 @@
-require(forecast)
-require(reshape2)
-require(ggplot2)
+require(rpart)
 source("../utils.R")
 
-
-
-rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
-                       colClasses = rep("numeric", 28))
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
-
 ########################
-#Impute using splines and lm
+#Impute using rpart
 ########################
+
+rawLoadData = read.csv('../../input/Load_history_augmented.csv', header=T)
+
+set.seed(100)
+
+missing.indices = which(is.na(rawLoadData$load1))
+load.rf = rpart(load1 ~ . , data=rawLoadData[,-10], method="anova")
+
+
 
 missing1 = do.call(rbind, lapply(6:12, function(day) {
   missing.indices = which(rawLoadData$month == 3 & rawLoadData$day == day)
@@ -132,84 +132,58 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 #Predict using forecast
 #######################
 
+rawTempData = read.csv('../../input/temperature_history.csv', header=T,
+                       colClasses = rep("numeric", 28))
 input = transform.fastVAR(rawLoadData, rawTempData)
 
-validation.end = nrow(input$load) - 24
-validation.start = validation.end - 24*7 + 1
-training.end = validation.start - 1
-training.start = training.end - 24*14 + 1
-testing.end = nrow(input$load)
-testing.start = testing.end - 24*14 + 1
-
-validation = input$load[validation.start : validation.end,]
-training = input$load[training.start : training.end,]
+testing.end = nrow(input$load) - 24
+testing.start = testing.end - 24*7 + 1
+training.end = testing.start - 1
+training.start = training.end - 24*28 + 1
+training = input$load[training.start : training.end, ]
 testing = input$load[testing.start : testing.end,]
 
-training.scaled = scale(training)
-validation.scaled = scale(validation, center = attr(training.scaled, "scaled:center"),
-                          scale = attr(training.scaled, "scaled:scale"))
-testing.scaled = scale(testing)
-
+predict.end = testing.end
+predict.start = predict.end - 24*28 + 1
 
 
 #Vary algorithm here
-prediction.train = matrix(0, nrow = 24*7, ncol=20)
+
+#Predict
+prediction = matrix(0, nrow = 24*7, ncol=20)
 for (i in 1:20) {
   print(i)
-  j = training.scaled[,i]
-  j.model = auto.arima(ts(j, frequency=24), parallel=T)
-  if (is.null(j.model$xreg)) 
-    prediction.train[,i] = predict(j.model, n.ahead = 24*7)$pred
-  else 
-    prediction.train[,i] = predict(j.model, n.ahead = 24*7,
-      newxreg=(nrow(training)+1) : (nrow(training) + nrow(validation)))$pred
+  j = training[,i]
+  prediction[,i] = predict(auto.arima(ts(j, frequency=24)), n.ahead = 24*7)$pred
 }
-colnames(prediction.train) = colnames(validation)
 
 #Cross Validate
-errors = (validation.scaled - prediction.train) / validation.scaled
-RMSE = apply(errors, 2, function(j) sqrt(mean((j^2))))
-barplot(RMSE)
-png(filename="performance/naive3RMSE.png")
-barplot(RMSE)
-dev.off()
+errors = testing - prediction
+test = apply(errors, 2, function(j) {
+  sum(j^2)
+})
 
-validation.melt = melt(validation.scaled)
-prediction.train.melt = melt(prediction.train)
-merged = merge(validation.melt, prediction.train.melt, by=c("Var1", "Var2"))
-ggplot(merged, aes(x=Var1)) + geom_line(aes(y=value.x, color='red')) + geom_line(aes(y=value.y, color='green')) + facet_wrap(~Var2, ncol=5)
-ggsave("performance/naive3matrix.png")
-
-#Train final model
-prediction.test = data.frame(apply(testing.scaled, 2, function(j) {
-  j.model = auto.arima(ts(j, frequency=24), parallel=T)
-  if (is.null(j.model$xreg)) 
-    prediction.train[,i] = predict(j.model, n.ahead = 24*7)$pred
-  else 
-    prediction.train[,i] = predict(j.model, n.ahead = 24*7,
-      newxreg=(nrow(training)+1) : (nrow(training) + nrow(validation)))$pred
+#Create model for test set
+prediction = data.frame(apply(input$load[predict.start:predict.end,], 2, function(j) {
+  predict(auto.arima(ts(j, frequency=24)), n.ahead=24*7)$pred
 }))
 
-#Sanity Check
-prediction.test.melt = melt(prediction.test)
-ggplot(prediction.test.melt, aes(x=Var1, group=Var2, y=value, color=Var2)) + geom_line() + facet_wrap(~Var2, ncol=5)
 
-#Rescale
-for (i in 1:ncol(prediction.test)) {
-  prediction.test[,i] = prediction.test[,i] * attr(testing.scaled, "scaled:scale")[i] + attr(testing.scaled, "scaled:center")[i]
-}
-
-#Prepare submission
-prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction.test, function(i) {
+                   
+#Format output                   
+prediction.output = cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction, function(i) {
   pred = matrix(i, ncol=24)
   data.frame(cbind(year=rep(2008,7), month = rep(7,7), day=1:7, pred))
 })))
+
 prediction.agg = ddply(prediction.output, "day", function(d) {
   cbind(zone_id = 21, year=2008, month=7,day=d$day[1], data.frame(as.list(apply(d[,5:28], 2, sum))))
 })
 prediction.output = rbind(prediction.output, prediction.agg)
+
 prediction.output = prediction.output[order(prediction.output$day, prediction.output$zone_id),]
 colnames(prediction.output)[5:28] = paste("h", 1:24, sep="")
+
 final = rbind(imputed, prediction.output)
 final = cbind(id=1:nrow(final), final)
 write.csv(final, "../../submissions/submission3.csv", row.names=F, quote=F)

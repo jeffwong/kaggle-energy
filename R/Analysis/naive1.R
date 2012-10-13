@@ -84,6 +84,8 @@ imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, miss
 #Predict using forecast
 #######################
 
+input = transform.fastVAR(rawLoadData, rawTempData)
+
 validation.end = nrow(input$load) - 24
 validation.start = validation.end - 24*7 + 1
 training.end = validation.start - 1
@@ -95,29 +97,59 @@ validation = input$load[validation.start : validation.end,]
 training = input$load[training.start : training.end,]
 testing = input$load[testing.start : testing.end,]
 
-#Vary algorithm here
-input = transform.fastVAR(rawLoadData, rawTempData)
+training.scaled = scale(training)
+validation.scaled = scale(validation, center = attr(training.scaled, "scaled:center"),
+                          scale = attr(training.scaled, "scaled:scale"))
+testing.scaled = scale(testing)
 
-prediction.train = data.frame(apply(training, 2, function(j) {
-    predict(auto.arima(ts(j)), 24*7)$pred
-}))
+
+
+#Vary algorithm here
+prediction.train = apply(training.scaled, 2, function(j) {
+  j.model = auto.arima(ts(j), parallel=T)
+  if (is.null(j.model$xreg)) 
+    prediction.train[,i] = predict(j.model, n.ahead = 24*7)$pred
+  else 
+    prediction.train[,i] = predict(j.model, n.ahead = 24*7,
+      newxreg=(nrow(training)+1) : (nrow(training) + nrow(validation)))$pred
+})
+colnames(prediction.train) = colnames(validation)
 
 #Cross Validate
-errors = (validation - prediction.train) / validation
-SSE = apply(errors, 2, function(j) sum(j^2))
-barplot(SSE)
+errors = (validation.scaled - prediction.train) / validation.scaled
+RMSE = apply(errors, 2, function(j) sqrt(mean((j^2))))
+barplot(RMSE)
+png(filename="performance/naive1RMSE.png")
+barplot(RMSE)
+dev.off()
 
-tsIndex = 1
-test = melt(cbind(validation[,tsIndex], prediction.train[,tsIndex]))
-ggplot(test, aes(x = Var1, y = value, group = Var2, color = Var2)) + geom_line()
+validation.melt = melt(validation.scaled)
+prediction.train.melt = melt(prediction.train)
+merged = merge(validation.melt, prediction.train.melt, by=c("Var1", "Var2"))
+ggplot(merged, aes(x=Var1)) + geom_line(aes(y=value.x, color='red')) + geom_line(aes(y=value.y, color='green')) + facet_wrap(~Var2, ncol=5)
+ggsave("performance/naive1matrix.png")
 
 #Train final model
-prediction.test = data.frame(apply(testing, 2, function(j) {
-    predict(auto.arima(ts(j)), 24*7)$pred
-}))
+prediction.test = apply(testing.scaled, 2, function(j) {
+  j.model = auto.arima(ts(j), parallel=T)
+  if (is.null(j.model$xreg)) 
+    prediction.train[,i] = predict(j.model, n.ahead = 24*7)$pred
+  else 
+    prediction.train[,i] = predict(j.model, n.ahead = 24*7,
+      newxreg=(nrow(training)+1) : (nrow(training) + nrow(validation)))$pred
+})
+
+#Sanity Check
+prediction.test.melt = melt(prediction.test)
+ggplot(prediction.test.melt, aes(x=Var1, group=Var2, y=value, color=Var2)) + geom_line() + facet_wrap(~Var2, ncol=5)
+
+#Rescale
+for (i in 1:ncol(prediction.test)) {
+  prediction.test[,i] = prediction.test[,i] * attr(testing.scaled, "scaled:scale")[i] + attr(testing.scaled, "scaled:center")[i]
+}
 
 #Prepare submission
-prediction.output = data.frame(cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(prediction.test, function(i) {
+prediction.output = data.frame(cbind(zone_id=rep(1:20,each=7), do.call(rbind, lapply(data.frame(prediction.test), function(i) {
     pred = matrix(i, ncol=24)
     cbind(year=2008, month = 7, day=1:7, pred)
 }))))
