@@ -4,11 +4,12 @@
 
 require(plyr)
 
-#Remove the NA rows meant for forecasting from the load data
-input.partition = function(rawLoadData) {
-    ddply(rawLoadData, .variables = "zone_id", .fun = function(zone) {
-        zone[1:1643,]
-    })
+plotLoad = function(rawLoadData, year, month, day) {
+    indices = which(rawLoadData$year == year & rawLoadData$month == month & rawLoadData$day %in% day)
+    x = rawLoadData[indices,]
+    x.melt = melt(x, id.vars = 1:4)
+    x.melt$zone_id = as.factor(x.melt$zone_id)
+    ggplot(x.melt, aes(x=variable, y=value, group=zone_id, color=zone_id)) + geom_line()
 }
 
 #Transform raw data into fastVAR format
