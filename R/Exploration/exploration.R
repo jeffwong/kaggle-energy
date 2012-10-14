@@ -1,22 +1,25 @@
 require(ggplot2)
 require(reshape2)
 
-rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
-                       colClasses = rep("numeric", 28))
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
-input = transform.fastVAR(rawLoadData, rawTempData)
+x = read.csv("../../input/Load_history_augmented.csv", header=T)
 
+x.2007 = x[which(x$year ==2007),]
+x.2007.melt = melt(x.2007[,1:30], id.vars=1:10)
+ggplot(x.2007.melt, aes(x=day_of_week, fill = variable, y = value)) + geom_bar(stat="identity") + facet_wrap(~season, ncol=2)
+ggsave("TotalLoadByDayOfWeekAndSeason.png")
 
-missing.indices = which(rawLoadData$month == 3 & rawLoadData$day %in% 5:7)
-missing.data = rawLoadData[missing.indices,]
-#missing.melt = melt(missing.data, id.vars = colnames(missing.data)[1:4])
-#ggplot(missing.melt, aes(y=value, group=zone_id)) + geom_line()
+x.2007 = x[which(x$year ==2007),]
+x.2007[,11:30] = scale(x.2007[,11:30])
+x.2007.profile = ddply(x.2007, .variables=c('season', "day_of_week", "hour"), .fun=function(x) apply(x[11:30],2,mean))
+x.2007.profile.melt = melt(x.2007.profile, id.vars=1:3)
+ggplot(x.2007.profile.melt, aes(x=hour, y = value, group = variable, color = variable)) + geom_line() + facet_wrap(day_of_week~season, ncol=4)
+ggsave("LoadProfileByDayOfWeekAndSeason.png")
 
+plotLoad = function(year, month, day) {
+    x = x[which(x$year == year & x$month == month & x$day %in% day),]
+    x.melt = melt(x[,1:30], id.vars=1:10)
+    ggplot(x.melt, aes(x=timestamp, group = variable, y = value, color = variable)) + geom_line()
+}
+plotLoad(2005, 3, 1:5)
+    
 
-startIndex = nrow(input$load) - 24*7 + 1
-endIndex = nrow(input$load)
-
-training = input$load[startIndex:endIndex,]
-training.melt = melt(training, id.vars=colnames(training))
-ggplot(data=training.melt, aes(x=Var1, y=value, group=Var2, color=Var2)) + geom_line()
