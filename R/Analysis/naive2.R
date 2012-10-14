@@ -1,82 +1,20 @@
-require(forecast)
-require(reshape2)
-require(ggplot2)
-source("../utils.R")
-
-rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
-                       colClasses = rep("numeric", 28))
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
+source('base.R')
 
 ########################
 #Impute using means
 ########################
 
-missing1 = do.call(rbind, lapply(6:12, function(day) {
-    missing.indices = which(rawLoadData$month == 3 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2005, month = 3, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2005
-    averages
+imputed = do.call('rbind',lapply(missingPeriods, function(missingDates) {
+    do.call('rbind', lapply(missingDates$day, function(day) {
+        #Given a specific day, break it down by zone
+        missing.indices = which(rawLoadData$month == missingDates$month & rawLoadData$day == day)
+        averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
+        averages = rbind(averages,
+            data.frame(zone_id=21, year=missingDates$year, month = missingDates$month, day = day, as.list(apply(averages[,5:28],2,sum))))
+        averages$year = missingDates$year
+        averages
+    }))
 }))
-missing2 = do.call(rbind, lapply(20:26, function(day) {
-    missing.indices = which(rawLoadData$month == 6 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2005, month = 6, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2005
-    averages
-}))
-missing3 = do.call(rbind, lapply(10:16, function(day) {
-    missing.indices = which(rawLoadData$month == 9 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2005, month = 9, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2005
-    averages
-}))
-missing4 = do.call(rbind, lapply(25:31, function(day) {
-    missing.indices = which(rawLoadData$month == 12 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2005, month = 12, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2005
-    averages
-}))
-missing5 = do.call(rbind, lapply(13:19, function(day) {
-    missing.indices = which(rawLoadData$month == 2 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2006, month = 2, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2006
-    averages
-}))
-missing6 = do.call(rbind, lapply(25:31, function(day) {
-    missing.indices = which(rawLoadData$month == 5 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2006, month = 5, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2006
-    averages
-}))
-missing7 = do.call(rbind, lapply(2:8, function(day) {
-    missing.indices = which(rawLoadData$month == 8 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2006, month = 8, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2006
-    averages
-}))
-missing8 = do.call(rbind, lapply(22:28, function(day) {
-    missing.indices = which(rawLoadData$month == 11 & rawLoadData$day == day)
-    averages = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) apply(d,2,mean, na.rm=T))
-    averages = rbind(averages,
-        data.frame(zone_id=21, year=2006, month = 11, day = day, as.list(apply(averages[,5:28],2,sum))))
-    averages$year = 2006
-    averages
-}))
-imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, missing7, missing8)
 
 #######################
 #Predict using persistence

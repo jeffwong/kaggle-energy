@@ -1,132 +1,28 @@
+source('base.R')
 require(forecast)
-require(reshape2)
-require(ggplot2)
-source("../utils.R")
-
-
-
-rawLoadData = read.csv('../../input/Load_history_training.csv', header=T,
-                       colClasses = rep("numeric", 28))
-rawTempData = read.csv('../../input/temperature_history.csv', header=T,
-                       colClasses = rep("numeric", 28))
 
 ########################
-#Impute using splines and lm
+#Impute using lm
 ########################
 
-missing1 = do.call(rbind, lapply(6:12, function(day) {
-  missing.indices = which(rawLoadData$month == 3 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(smooth.spline(x[-missing.index], j[-missing.index]), missing.index)$y
-    })
-    cbind(zone_id=d$zone_id[1], year=2005, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
+imputed = do.call('rbind',lapply(missingPeriods, function(missingDates) {
+    do.call('rbind', lapply(missingDates$day, function(day) {
+        #Given a specific day, break it down by zone
+        missing.indices = which(rawLoadData$month == missingDates$month & rawLoadData$day == day)
+        imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
+            day.imputed = apply(d[,5:28], 2, function(j) {
+                #interpolate the hours using lm
+                x = 1:length(j)
+                missing.index = which(is.na(j))
+                predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
+            })
+            cbind(zone_id=d$zone_id[1], year=missingDates$year, month=missingDates$month, day=day,
+                  data.frame(as.list(day.imputed)))
+        })
+        rbind(imputed, data.frame(zone_id=21, year=missingDates$year, month = missingDates$month,
+              day = day, as.list(apply(imputed[,5:28],2,sum))))           
+    }))
 }))
-missing2 = do.call(rbind, lapply(20:26, function(day) {
-  missing.indices = which(rawLoadData$month == 6 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(smooth.spline(x[-missing.index], j[-missing.index]), missing.index)$y
-    })
-    cbind(zone_id=d$zone_id[1], year=2005, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing3 = do.call(rbind, lapply(10:16, function(day) {
-  missing.indices = which(rawLoadData$month == 9 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2005, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing4 = do.call(rbind, lapply(25:31, function(day) {
-  missing.indices = which(rawLoadData$month == 12 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2005, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing5 = do.call(rbind, lapply(13:19, function(day) {
-  missing.indices = which(rawLoadData$month == 2 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2006, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing6 = do.call(rbind, lapply(25:31, function(day) {
-  missing.indices = which(rawLoadData$month == 5 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2006, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing7 = do.call(rbind, lapply(2:8, function(day) {
-  missing.indices = which(rawLoadData$month == 8 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2006, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-missing8 = do.call(rbind, lapply(22:28, function(day) {
-  missing.indices = which(rawLoadData$month == 11 & rawLoadData$day == day)
-  imputed = ddply(rawLoadData[missing.indices,], c("zone_id"), function(d) {
-    day.imputed = apply(d[,5:28], 2, function(j) {
-      x = 1:length(j)
-      missing.index = which(is.na(j))
-      predict(lm(j ~ ., data.frame(x=x)), newdata = data.frame(x=missing.index))
-    })
-    cbind(zone_id=d$zone_id[1], year=2006, month=d$month[1], day=day,
-          data.frame(as.list(day.imputed)))
-  })
-  rbind(imputed, data.frame(zone_id=21, year=imputed$year[1], month = imputed$month[1],
-          day = imputed$day[1], as.list(apply(imputed[,5:28],2,sum))))
-}))
-imputed = rbind(missing1, missing2, missing3, missing4, missing5, missing6, missing7, missing8)
 
 #######################
 #Predict using forecast
