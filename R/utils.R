@@ -23,6 +23,14 @@ transform.fastVAR = function(rawLoadData, rawTempData) {
     return (list(load = as.matrix(load), temp = as.matrix(temp)))
   }
 
+deseason = function(mts) {
+    apply(mts, 2, function(j) {
+        j.ts = ts(j, frequency=24)
+        y = stl(j.ts, na.action=na.omit, s.window="periodic")
+        y$time.series[,-1]
+    })
+}
+
 delete.weeks = function(data, k=4, delete.dates=NULL){
   # Remove weeks from raw data
   #
