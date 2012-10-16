@@ -24,11 +24,24 @@ transform.fastVAR = function(rawLoadData, rawTempData) {
   }
 
 deseason = function(mts) {
-    apply(mts, 2, function(j) {
-        j.ts = ts(j, frequency=24)
-        y = stl(j.ts, na.action=na.omit, s.window="periodic")
-        y$time.series[,-1]
-    })
+    if (!is.data.frame(mts) & !is.matrix(mts)) {
+        y = stl(ts(mts, frequency=24), na.action=na.omit, s.window="periodic")
+        seasonal = y$time.series[,1]
+        remaining = apply(y$time.series[,-1], 1, sum)
+        return (list(seasonal=seasonal, remaining=remaining))
+    }
+    else {
+        decomp = apply(mts, 2, function(j) {
+            j.ts = ts(j, frequency=24)
+            y = stl(j.ts, na.action=na.omit, s.window="periodic")
+            seasonal = y$time.series[,1]
+            remaining = apply(y$time.series[,-1], 1, sum)
+            return (list(seasonal=seasonal, remaining=remaining))
+        })
+        seasonal = do.call('rbind', lapply(decomp, function(i) i$seasonal))
+        remaining = do.call('rbind', lapply(decomp, function(i) i$remaining))
+        return (list(seasonal=seasonal, remaining=remaining))
+    }
 }
 
 delete.weeks = function(data, k=4, delete.dates=NULL){
